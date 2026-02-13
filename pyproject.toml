@@ -1,0 +1,39 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "z407-controller"
+version = "0.1.0"
+description = "Control Logitech Z407 speakers over BLE (Bluetooth Low Energy)"
+readme = "README.md"
+requires-python = ">=3.11"
+license = "MIT"
+authors = [{ name = "trung" }]
+dependencies = [
+    "bleak>=0.21",
+    "aiohttp>=3.9",
+    "PySide6>=6.6",
+    "qasync>=0.27",
+]
+
+[project.scripts]
+z407 = "z407.cli:main"
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0",
+    "pytest-asyncio>=0.21",
+    "pytest-qt>=4.2",
+    "ruff>=0.1",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/z407"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
