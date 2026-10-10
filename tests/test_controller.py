@@ -7,9 +7,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from z407.connection import ConnectionState
-from z407.controller import Z407Controller, VOLUME_DEFAULT, VOLUME_STEP
+from z407.controller import Z407Controller
 from z407.protocol import Command, Response
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -35,54 +34,19 @@ class TestZ407ControllerVolume:
         ctrl = _make_controller()
         await ctrl.volume_up()
         ctrl._connection.send_command.assert_awaited_once_with(Command.VOLUME_UP)
-        assert ctrl.volume == VOLUME_DEFAULT + VOLUME_STEP
 
     @pytest.mark.asyncio
     async def test_volume_down_single(self):
         ctrl = _make_controller()
         await ctrl.volume_down()
         ctrl._connection.send_command.assert_awaited_once_with(Command.VOLUME_DOWN)
-        assert ctrl.volume == VOLUME_DEFAULT - VOLUME_STEP
 
     @pytest.mark.asyncio
     async def test_volume_up_multiple_steps(self):
         ctrl = _make_controller()
-        await ctrl.volume_up(steps=3)
+        with patch("z407.controller.asyncio.sleep", new=AsyncMock()):
+            await ctrl.volume_up(steps=3)
         assert ctrl._connection.send_command.await_count == 3
-        assert ctrl.volume == VOLUME_DEFAULT + 3 * VOLUME_STEP
-
-    @pytest.mark.asyncio
-    async def test_volume_clamped_at_max(self):
-        ctrl = _make_controller()
-        ctrl._volume_estimate = 100
-        await ctrl.volume_up()
-        assert ctrl.volume == 100
-
-    @pytest.mark.asyncio
-    async def test_volume_clamped_at_min(self):
-        ctrl = _make_controller()
-        ctrl._volume_estimate = 0
-        await ctrl.volume_down()
-        assert ctrl.volume == 0
-
-    def test_set_volume_estimate(self):
-        ctrl = _make_controller()
-        ctrl.set_volume_estimate(75)
-        assert ctrl.volume == 75
-
-    def test_set_volume_estimate_clamped(self):
-        ctrl = _make_controller()
-        ctrl.set_volume_estimate(150)
-        assert ctrl.volume == 100
-        ctrl.set_volume_estimate(-10)
-        assert ctrl.volume == 0
-
-    @pytest.mark.asyncio
-    async def test_volume_change_callback(self):
-        volumes = []
-        ctrl = _make_controller(on_volume_change=volumes.append)
-        await ctrl.volume_up()
-        assert volumes == [VOLUME_DEFAULT + VOLUME_STEP]
 
 
 class TestZ407ControllerBass:
@@ -101,7 +65,8 @@ class TestZ407ControllerBass:
     @pytest.mark.asyncio
     async def test_bass_up_multiple(self):
         ctrl = _make_controller()
-        await ctrl.bass_up(steps=4)
+        with patch("z407.controller.asyncio.sleep", new=AsyncMock()):
+            await ctrl.bass_up(steps=4)
         assert ctrl._connection.send_command.await_count == 4
 
 
@@ -167,7 +132,8 @@ class TestZ407ControllerPairing:
     @pytest.mark.asyncio
     async def test_pair_device_and_switch(self):
         ctrl = _make_controller()
-        await ctrl.pair_device_and_switch()
+        with patch("z407.controller.asyncio.sleep", new=AsyncMock()):
+            await ctrl.pair_device_and_switch()
         calls = ctrl._connection.send_command.await_args_list
         # Should send BT_PAIR first, then INPUT_BLUETOOTH
         assert calls[0].args[0] == Command.BT_PAIR

@@ -16,16 +16,11 @@ class ControllerBridge(QObject):
     """Thread-safe bridge from controller callbacks to Qt signals."""
 
     state_changed = Signal(str)       # ConnectionState.value
-    volume_changed = Signal(int)      # 0–100
     input_changed = Signal(str)       # 'bluetooth', 'aux', 'usb'
 
     def on_state_change(self, state: ConnectionState) -> None:
         """Controller callback — emits :pyattr:`state_changed`."""
         self.state_changed.emit(state.value)
-
-    def on_volume_change(self, volume: int) -> None:
-        """Controller callback — emits :pyattr:`volume_changed`."""
-        self.volume_changed.emit(volume)
 
     def on_input_change(self, source: str) -> None:
         """Controller callback — emits :pyattr:`input_changed`."""

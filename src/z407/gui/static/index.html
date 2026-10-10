@@ -95,47 +95,12 @@
             margin-bottom: 12px;
         }
 
-        /* Volume */
-        .volume-row {
+        /* Volume / bass step buttons */
+        .step-row {
             display: flex;
-            align-items: center;
-            gap: 12px;
+            gap: 8px;
         }
-        .volume-slider-wrap {
-            flex: 1;
-            position: relative;
-        }
-        .volume-slider {
-            -webkit-appearance: none;
-            width: 100%;
-            height: 6px;
-            border-radius: 3px;
-            background: var(--border);
-            outline: none;
-        }
-        .volume-slider::-webkit-slider-thumb {
-            -webkit-appearance: none;
-            width: 20px; height: 20px;
-            border-radius: 50%;
-            background: var(--accent);
-            cursor: pointer;
-            border: 2px solid var(--bg);
-            box-shadow: 0 0 6px rgba(124,108,240,0.4);
-        }
-        .volume-slider::-moz-range-thumb {
-            width: 20px; height: 20px;
-            border-radius: 50%;
-            background: var(--accent);
-            cursor: pointer;
-            border: 2px solid var(--bg);
-        }
-        .volume-label {
-            font-size: 0.9rem;
-            font-weight: 600;
-            min-width: 3ch;
-            text-align: right;
-            font-variant-numeric: tabular-nums;
-        }
+        .step-row .btn { flex: 1; height: 48px; }
 
         /* Buttons */
         .btn {
@@ -199,13 +164,6 @@
             font-size: 1.3rem;
         }
         .play-btn:hover { background: var(--accent-hover); }
-
-        /* Bass row */
-        .bass-row {
-            display: flex;
-            gap: 8px;
-        }
-        .bass-row .btn { flex: 1; height: 48px; }
 
         /* Input source */
         .input-row {
@@ -279,23 +237,18 @@
     </div>
 
     <!-- Volume -->
-    <div class="section" id="controlsContainer">
+    <div class="section">
         <div class="section-title">Volume</div>
-        <div class="volume-row">
-            <button class="btn btn-icon" onclick="cmd('volume_down')">−</button>
-            <div class="volume-slider-wrap">
-                <input type="range" class="volume-slider" id="volumeSlider"
-                       min="0" max="100" step="5" value="50">
-            </div>
-            <button class="btn btn-icon" onclick="cmd('volume_up')">+</button>
-            <span class="volume-label" id="volumeLabel">50</span>
+        <div class="step-row">
+            <button class="btn" onclick="cmd('volume_down')">− Volume</button>
+            <button class="btn" onclick="cmd('volume_up')">+ Volume</button>
         </div>
     </div>
 
     <!-- Bass -->
     <div class="section">
         <div class="section-title">Bass</div>
-        <div class="bass-row">
+        <div class="step-row">
             <button class="btn" onclick="cmd('bass_down')">− Bass</button>
             <button class="btn" onclick="cmd('bass_up')">+ Bass</button>
         </div>
@@ -349,16 +302,12 @@
 <div class="toast" id="toast"></div>
 
 <script>
-    const volumeSlider = document.getElementById('volumeSlider');
-    const volumeLabel = document.getElementById('volumeLabel');
     const statusDot = document.getElementById('statusDot');
     const statusText = document.getElementById('statusText');
     const pairStatusEl = document.getElementById('pairStatus');
     const toast = document.getElementById('toast');
 
     let connected = false;
-    let volumeDebounce = null;
-    let currentVolume = 50;
 
     // -- Commands --
 
@@ -403,26 +352,6 @@
         }
     }
 
-    // -- Volume slider --
-
-    volumeSlider.addEventListener('input', () => {
-        volumeLabel.textContent = volumeSlider.value;
-    });
-
-    volumeSlider.addEventListener('change', () => {
-        const target = parseInt(volumeSlider.value);
-        const delta = target - currentVolume;
-        const steps = Math.abs(delta) / 5;
-        if (steps === 0) return;
-
-        if (delta > 0) {
-            cmd('volume_up', { steps });
-        } else {
-            cmd('volume_down', { steps });
-        }
-        currentVolume = target;
-    });
-
     // -- State updates --
 
     function setActiveInput(source) {
@@ -448,12 +377,6 @@
             }
         }
 
-        if (data.volume !== undefined) {
-            currentVolume = data.volume;
-            volumeSlider.value = data.volume;
-            volumeLabel.textContent = data.volume;
-        }
-
         if (data.input) {
             setActiveInput(data.input);
         }
@@ -465,7 +388,6 @@
         const es = new EventSource('/api/events');
 
         es.addEventListener('status', e => updateState(JSON.parse(e.data)));
-        es.addEventListener('volume', e => updateState(JSON.parse(e.data)));
         es.addEventListener('input', e => updateState(JSON.parse(e.data)));
 
         es.onerror = () => {

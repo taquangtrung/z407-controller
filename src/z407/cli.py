@@ -2,12 +2,12 @@
 
 Usage examples::
 
-    z407 scan
-    z407 volume up --steps 3
-    z407 input bluetooth
-    z407 pair
-    z407 gui
-    z407 daemon
+    z407-cli scan
+    z407-cli volume up --steps 3
+    z407-cli input bluetooth
+    z407-cli pair
+    z407-cli daemon
+    z407-gui
 """
 
 from __future__ import annotations
@@ -15,7 +15,6 @@ from __future__ import annotations
 import argparse
 import asyncio
 import logging
-import signal
 import sys
 
 from z407.controller import Z407Controller
@@ -23,7 +22,7 @@ from z407.controller import Z407Controller
 
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        prog="z407",
+        prog="z407-cli",
         description="Control Logitech Z407 speakers over BLE.",
     )
     parser.add_argument(
@@ -144,11 +143,11 @@ async def _cmd_status(_args: argparse.Namespace) -> int:
         print(f"Speaker found: {device.name} ({device.address})")
         print("Attempting connection…")
         try:
-            await ctrl._connection.connect(device.address)
+            await ctrl._connection.connect(device)
             print(f"Status: {ctrl.state.value}")
             await ctrl._connection.disconnect()
             return 0
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001
             print(f"Connection failed: {exc}")
             return 1
     print("No Z407 speaker found.")
@@ -163,14 +162,14 @@ async def _connect_and_run(action) -> int:
         print("No Z407 speaker found.", file=sys.stderr)
         return 1
     try:
-        await ctrl._connection.connect(device.address)
-    except Exception as exc:
+        await ctrl._connection.connect(device)
+    except Exception as exc:  # noqa: BLE001
         print(f"Connection failed: {exc}", file=sys.stderr)
         return 1
     try:
         await action(ctrl)
         return 0
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001
         print(f"Command failed: {exc}", file=sys.stderr)
         return 2
     finally:
@@ -181,10 +180,10 @@ async def _cmd_volume(args: argparse.Namespace) -> int:
     async def action(ctrl: Z407Controller):
         if args.direction == "up":
             await ctrl.volume_up(steps=args.steps)
-            print(f"Volume up {args.steps} step(s). Estimated: {ctrl.volume}%")
+            print(f"Volume up {args.steps} step(s).")
         else:
             await ctrl.volume_down(steps=args.steps)
-            print(f"Volume down {args.steps} step(s). Estimated: {ctrl.volume}%")
+            print(f"Volume down {args.steps} step(s).")
 
     return await _connect_and_run(action)
 
@@ -362,9 +361,9 @@ def main() -> None:
 
     command = args.command
 
-    # Default to gui when no subcommand given
     if command is None:
-        command = "gui"
+        parser.print_help()
+        sys.exit(1)
 
     # GUI and daemon are synchronous (run web server with event loop)
     if command == "gui":
@@ -379,6 +378,12 @@ def main() -> None:
 
     exit_code = asyncio.run(handler(args))
     sys.exit(exit_code)
+
+
+def gui_main() -> None:
+    """Entry point for ``z407-gui``: launch the native GUI."""
+    _setup_logging(verbose=False, quiet=False)
+    sys.exit(_cmd_gui(argparse.Namespace(web=False)))
 
 
 if __name__ == "__main__":

@@ -54,14 +54,6 @@ QLabel#sectionTitle {{
     margin-bottom: 2px;
 }}
 
-QLabel#volumeLabel {{
-    font-size: 13px;
-    font-weight: 500;
-    min-width: 34px;
-    qproperty-alignment: AlignRight;
-    color: {TEXT_DIM};
-}}
-
 QLabel#statusDot {{
     min-width: 8px;
     max-width: 8px;
@@ -142,6 +134,11 @@ QPushButton#playBtn:pressed {{
     background-color: #0070e0;
 }}
 
+QPushButton#playBtn:disabled {{
+    background-color: #2c2c2e;
+    color: #636366;
+}}
+
 QPushButton#accentBtn {{
     background-color: {ACCENT};
     border-color: {ACCENT};
@@ -172,6 +169,10 @@ QPushButton#dangerBtn:hover {{
     border-color: #5a2828;
 }}
 
+QPushButton#dangerBtn:disabled {{
+    color: #636366;
+}}
+
 QPushButton#inputBtn {{
     border-radius: 6px;
     font-size: 12px;
@@ -186,30 +187,10 @@ QPushButton#inputBtn[active="true"] {{
     color: #ffffff;
 }}
 
-/* ── Slider ─────────────────────────────────────────── */
-
-QSlider::groove:horizontal {{
-    height: 4px;
-    border-radius: 2px;
-    background: {BORDER};
-}}
-
-QSlider::handle:horizontal {{
-    width: 16px;
-    height: 16px;
-    margin: -6px 0;
-    border-radius: 8px;
-    background: #ffffff;
-    border: 0px;
-}}
-
-QSlider::handle:horizontal:hover {{
-    background: #e5e5e7;
-}}
-
-QSlider::sub-page:horizontal {{
-    background: {ACCENT};
-    border-radius: 2px;
+QPushButton#inputBtn[active="true"]:disabled {{
+    background-color: #1a3a5c;
+    border-color: #1a3a5c;
+    color: #636366;
 }}
 
 /* ── Message Box ────────────────────────────────────── */

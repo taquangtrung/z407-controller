@@ -16,12 +16,11 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
-
 from qasync import asyncSlot
 
+from z407.connection import ConnectionState
 from z407.controller import Z407Controller
 from z407.gui.bridge import ControllerBridge
-from z407.gui.style import STYLESHEET
 from z407.gui.widgets.bass import BassWidget
 from z407.gui.widgets.input_source import InputSourceWidget
 from z407.gui.widgets.pairing import PairingWidget
@@ -77,6 +76,10 @@ class MainWindow(QMainWindow):
 
         # Status bar
         self._status_bar = StatusBar()
+
+        # Pairing sits next to the Connect button
+        self._pairing = PairingWidget()
+        self._status_bar.add_action(self._pairing)
         main_layout.addWidget(self._status_bar)
 
         # Volume
@@ -95,9 +98,6 @@ class MainWindow(QMainWindow):
         self._input_source = InputSourceWidget()
         main_layout.addWidget(_make_section(self._input_source))
 
-        # Pairing
-        self._pairing = PairingWidget()
-        main_layout.addWidget(_make_section(self._pairing))
 
         # Factory reset — flat, no card wrapper
         self._reset_btn = QPushButton("⚠️  Factory Reset")
@@ -107,12 +107,33 @@ class MainWindow(QMainWindow):
 
         main_layout.addStretch()
 
+        # Everything except the Connect button needs a live connection
+        self._controls: list[QWidget] = [
+            self._pairing,
+            self._volume,
+            self._bass,
+            self._playback,
+            self._input_source,
+            self._reset_btn,
+        ]
+        self._tray_actions: list[QAction] = []
+        self._set_controls_enabled(False)
+
+    def _set_controls_enabled(self, enabled: bool) -> None:
+        for control in self._controls:
+            control.setEnabled(enabled)
+        for action in self._tray_actions:
+            action.setEnabled(enabled)
+
+    def _on_state_changed(self, state: str) -> None:
+        self._set_controls_enabled(state == ConnectionState.CONNECTED.value)
+
     # -- Signal wiring ------------------------------------------------------
 
     def _connect_signals(self) -> None:
         # Bridge → widgets
         self._bridge.state_changed.connect(self._status_bar.set_state)
-        self._bridge.volume_changed.connect(self._volume.set_volume)
+        self._bridge.state_changed.connect(self._on_state_changed)
         self._bridge.input_changed.connect(self._input_source.set_active)
 
         # Widgets → controller (async)
@@ -125,6 +146,8 @@ class MainWindow(QMainWindow):
         self._playback.prev_requested.connect(self._on_prev_track)
         self._input_source.input_requested.connect(self._on_switch_input)
         self._pairing.pair_requested.connect(self._on_pair)
+        self._status_bar.connect_requested.connect(self._controller.connect)
+        self._status_bar.disconnect_requested.connect(self._on_disconnect)
 
     # -- System tray --------------------------------------------------------
 
@@ -145,18 +168,21 @@ class MainWindow(QMainWindow):
         # Context menu
         menu = QMenu()
         vol_up = QAction("Volume Up", self)
-        vol_up.triggered.connect(self._on_volume_up_tray)
+        vol_up.triggered.connect(self._on_volume_up)
         menu.addAction(vol_up)
+        self._tray_actions.append(vol_up)
 
         vol_down = QAction("Volume Down", self)
-        vol_down.triggered.connect(self._on_volume_down_tray)
+        vol_down.triggered.connect(self._on_volume_down)
         menu.addAction(vol_down)
+        self._tray_actions.append(vol_down)
 
         menu.addSeparator()
 
         play = QAction("Play / Pause", self)
         play.triggered.connect(self._on_play_pause)
         menu.addAction(play)
+        self._tray_actions.append(play)
 
         menu.addSeparator()
 
@@ -167,6 +193,9 @@ class MainWindow(QMainWindow):
         quit_action = QAction("Quit", self)
         quit_action.triggered.connect(self._quit_app)
         menu.addAction(quit_action)
+
+        for action in self._tray_actions:
+            action.setEnabled(self._controller.is_connected)
 
         self._tray.setContextMenu(menu)
         self._tray.activated.connect(self._on_tray_activated)
@@ -186,7 +215,7 @@ class MainWindow(QMainWindow):
 
     # -- Close to tray ------------------------------------------------------
 
-    def closeEvent(self, event) -> None:  # noqa: N802
+    def closeEvent(self, event) -> None:
         if hasattr(self, "_tray") and self._tray.isVisible():
             self.hide()
             event.ignore()
@@ -195,31 +224,17 @@ class MainWindow(QMainWindow):
 
     # -- Async controller slots ---------------------------------------------
 
-    @asyncSlot(int)
-    async def _on_volume_up(self, steps: int = 1) -> None:
-        try:
-            await self._controller.volume_up(steps=steps)
-        except Exception:
-            logger.exception("Volume up failed")
-
-    @asyncSlot(int)
-    async def _on_volume_down(self, steps: int = 1) -> None:
-        try:
-            await self._controller.volume_down(steps=steps)
-        except Exception:
-            logger.exception("Volume down failed")
-
     @asyncSlot()
-    async def _on_volume_up_tray(self) -> None:
+    async def _on_volume_up(self) -> None:
         try:
-            await self._controller.volume_up(steps=1)
+            await self._controller.volume_up()
         except Exception:
             logger.exception("Volume up failed")
 
     @asyncSlot()
-    async def _on_volume_down_tray(self) -> None:
+    async def _on_volume_down(self) -> None:
         try:
-            await self._controller.volume_down(steps=1)
+            await self._controller.volume_down()
         except Exception:
             logger.exception("Volume down failed")
 
@@ -264,6 +279,13 @@ class MainWindow(QMainWindow):
             await self._controller.switch_input(source)
         except Exception:
             logger.exception("Switch input failed")
+
+    @asyncSlot()
+    async def _on_disconnect(self) -> None:
+        try:
+            await self._controller.disconnect()
+        except Exception:
+            logger.exception("Disconnect failed")
 
     @asyncSlot()
     async def _on_pair(self) -> None:

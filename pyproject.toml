@@ -18,7 +18,8 @@ dependencies = [
 ]
 
 [project.scripts]
-z407 = "z407.cli:main"
+z407-cli = "z407.cli:main"
+z407-gui = "z407.cli:gui_main"
 
 [project.optional-dependencies]
 dev = [
@@ -33,6 +34,7 @@ packages = ["src/z407"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
+pythonpath = ["src"]
 testpaths = ["tests"]
 
 [tool.ruff]

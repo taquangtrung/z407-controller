@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import ClassVar
+
 from PySide6.QtCore import Signal
 from PySide6.QtWidgets import QHBoxLayout, QLabel, QPushButton, QVBoxLayout, QWidget
 
@@ -12,7 +14,7 @@ class InputSourceWidget(QWidget):
     input_requested = Signal(str)  # source name
 
     SOURCES = ("bluetooth", "aux", "usb")
-    LABELS = {"bluetooth": "Bluetooth", "aux": "AUX", "usb": "USB"}
+    LABELS: ClassVar[dict[str, str]] = {"bluetooth": "Bluetooth", "aux": "AUX", "usb": "USB"}
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)

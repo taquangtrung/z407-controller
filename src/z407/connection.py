@@ -10,8 +10,8 @@ import asyncio
 import logging
 import platform
 import subprocess
+from collections.abc import Callable
 from enum import Enum
-from typing import Callable
 
 from bleak import BleakClient, BleakScanner
 from bleak.backends.device import BLEDevice
@@ -127,25 +127,62 @@ class Z407Connection:
             logger.info("Found Z407: %s (%s)", device.name, device.address)
             return device
 
+        # A speaker that BlueZ already holds a link to stops advertising, so
+        # the scan above cannot see it; look it up among the connected devices.
+        device = await self._find_bluez_connected_device()
+        if device:
+            logger.info("Found already-connected Z407: %s (%s)", device.name, device.address)
+            return device
+
         logger.warning("No Z407 speaker found")
         self._set_state(ConnectionState.DISCONNECTED)
         return None
 
+    @staticmethod
+    async def _find_bluez_connected_device() -> BLEDevice | None:
+        """Return a BlueZ device that is already connected and exposes the Z407 service.
+
+        Linux only; relies on bleak's BlueZ manager cache. Returns ``None`` on
+        other platforms or if the cache cannot be read.
+        """
+        if platform.system() != "Linux":
+            return None
+        try:
+            from bleak.backends.bluezdbus.manager import get_global_bluez_manager
+
+            manager = await get_global_bluez_manager()
+            for path, interfaces in list(manager._properties.items()):
+                props = interfaces.get("org.bluez.Device1")
+                if (
+                    props
+                    and props.get("Connected")
+                    and SERVICE_UUID in props.get("UUIDs", [])
+                ):
+                    return BLEDevice(props["Address"], props.get("Alias"), {"path": path})
+        except Exception:
+            logger.debug("Could not query BlueZ for connected devices", exc_info=True)
+        return None
+
     # -- Connect / Handshake ------------------------------------------------
 
-    async def connect(self, address: str, timeout: float = 15.0) -> None:
-        """Connect to the speaker at *address* and perform the handshake.
+    async def connect(self, target: str | BLEDevice, timeout: float = 15.0) -> None:
+        """Connect to the speaker and perform the handshake.
+
+        *target* is a device address or a :class:`BLEDevice` from :meth:`scan`.
+        Prefer the device object: a speaker BlueZ already holds a link to is not
+        in bleak's scan cache, so it can only be resolved from the object.
 
         Raises :class:`TimeoutError` if the handshake does not complete
         within *timeout* seconds.
         """
+        address = target if isinstance(target, str) else target.address
         self._address = address
         self._set_state(ConnectionState.CONNECTING)
         self._handshake_event.clear()
         self._handshake_ack_received = False
 
         self._client = BleakClient(
-            address,
+            target,
             disconnected_callback=self._on_disconnect,
         )
         await self._client.connect()
@@ -173,7 +210,7 @@ class Z407Connection:
             try:
                 await asyncio.wait_for(self._handshake_event.wait(), timeout=retry_interval)
                 break  # Success - got CONNECTED
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 # If we got ACK_REPLY but not CONNECTED, retry sending ACK
                 if self._handshake_ack_received:
                     retry_count += 1
@@ -304,7 +341,7 @@ class Z407Connection:
             try:
                 device = await self.scan(timeout=10.0)
                 if device:
-                    await self.connect(device.address)
+                    await self.connect(device)
                     backoff = 1.0  # reset on success
                     continue
             except Exception:

@@ -2,14 +2,12 @@
 
 from __future__ import annotations
 
-import asyncio
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 from z407.connection import ConnectionState, Z407Connection
-from z407.protocol import COMMAND_UUID, RESPONSE_UUID, Command, Response
-
+from z407.protocol import COMMAND_UUID, Command, Response
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -56,7 +54,9 @@ class TestZ407ConnectionScan:
 
     @pytest.mark.asyncio
     async def test_scan_no_device(self):
-        with patch("z407.connection.BleakScanner") as MockScanner:
+        with patch("z407.connection.BleakScanner") as MockScanner, patch.object(
+            Z407Connection, "_find_bluez_connected_device", AsyncMock(return_value=None),
+        ):
             MockScanner.discover = AsyncMock(return_value=[])
             conn = Z407Connection()
             device = await conn.scan(timeout=1.0)
@@ -64,9 +64,21 @@ class TestZ407ConnectionScan:
             assert conn.state == ConnectionState.DISCONNECTED
 
     @pytest.mark.asyncio
+    async def test_scan_falls_back_to_already_connected_device(self):
+        found = MagicMock(address="AA:BB:CC:DD:EE:FF")
+        with patch("z407.connection.BleakScanner") as MockScanner, patch.object(
+            Z407Connection, "_find_bluez_connected_device", AsyncMock(return_value=found),
+        ):
+            MockScanner.discover = AsyncMock(return_value=[])
+            device = await Z407Connection().scan(timeout=1.0)
+            assert device is found
+
+    @pytest.mark.asyncio
     async def test_scan_updates_state(self):
         states = []
-        with patch("z407.connection.BleakScanner") as MockScanner:
+        with patch("z407.connection.BleakScanner") as MockScanner, patch.object(
+            Z407Connection, "_find_bluez_connected_device", AsyncMock(return_value=None),
+        ):
             MockScanner.discover = AsyncMock(return_value=[])
             conn = Z407Connection(on_state_change=states.append)
             await conn.scan(timeout=1.0)
@@ -91,9 +103,9 @@ class TestZ407ConnectionConnect:
         async def fake_write(uuid, data, response=False):
             # When HANDSHAKE_INIT is sent, simulate speaker responses
             if data == Command.HANDSHAKE_INIT and notification_callback:
-                notification_callback(0, bytearray(Response.HANDSHAKE_REPLY))
-                notification_callback(0, bytearray(Response.ACK_REPLY))
-                notification_callback(0, bytearray(Response.CONNECTED))
+                await notification_callback(0, bytearray(Response.HANDSHAKE_REPLY))
+                await notification_callback(0, bytearray(Response.ACK_REPLY))
+                await notification_callback(0, bytearray(Response.CONNECTED))
 
         mock_client.write_gatt_char = fake_write
 

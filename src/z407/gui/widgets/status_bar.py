@@ -2,11 +2,15 @@
 
 from __future__ import annotations
 
-from PySide6.QtWidgets import QHBoxLayout, QLabel, QWidget
+from PySide6.QtCore import Signal
+from PySide6.QtWidgets import QHBoxLayout, QLabel, QPushButton, QWidget
 
 
 class StatusBar(QWidget):
-    """Displays connection state with a colored dot and text label."""
+    """Displays connection state with a colored dot, text label and connect button."""
+
+    connect_requested = Signal()
+    disconnect_requested = Signal()
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -27,6 +31,24 @@ class StatusBar(QWidget):
         layout.addWidget(self._label)
 
         layout.addStretch()
+
+        # Connect / Cancel / Disconnect, depending on the current state
+        self._btn = QPushButton("Connect")
+        self._btn.clicked.connect(self._on_click)
+        layout.addWidget(self._btn)
+
+        self._layout = layout
+        self._state = "disconnected"
+
+    def add_action(self, widget: QWidget) -> None:
+        """Append *widget* to the right-hand side, after the connect button."""
+        self._layout.addWidget(widget)
+
+    def _on_click(self) -> None:
+        if self._state == "disconnected":
+            self.connect_requested.emit()
+        else:
+            self.disconnect_requested.emit()
 
     def set_state(self, state: str) -> None:
         """Update the display for a new connection state.
@@ -51,3 +73,9 @@ class StatusBar(QWidget):
             "connected": "Connected",
         }.get(state, state.capitalize())
         self._label.setText(display)
+
+        self._state = state
+        self._btn.setText({
+            "disconnected": "Connect",
+            "connected": "Disconnect",
+        }.get(state, "Cancel"))

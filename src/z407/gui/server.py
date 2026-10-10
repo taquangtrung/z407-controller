@@ -32,7 +32,7 @@ def _get_local_ip() -> str:
         ip = s.getsockname()[0]
         s.close()
         return ip
-    except Exception:
+    except OSError:
         return "127.0.0.1"
 
 
@@ -46,7 +46,6 @@ class Z407WebApp:
 
         self.controller = Z407Controller(
             on_state_change=self._on_state_change,
-            on_volume_change=self._on_volume_change,
             on_input_change=self._on_input_change,
         )
 
@@ -73,7 +72,6 @@ class Z407WebApp:
     async def _handle_status(self, request: web.Request) -> web.Response:
         return web.json_response({
             "state": self.controller.state.value,
-            "volume": self.controller.volume,
             "input": self.controller.active_input,
             "connected": self.controller.is_connected,
         })
@@ -85,8 +83,8 @@ class Z407WebApp:
         if request.content_length:
             try:
                 params = await request.json()
-            except Exception:
-                pass
+            except ValueError:
+                logger.debug("Ignoring invalid JSON body for %s", name)
 
         try:
             result = await self._dispatch_command(name, params)
@@ -111,10 +109,10 @@ class Z407WebApp:
         match name:
             case "volume_up":
                 await self.controller.volume_up(steps=steps)
-                return {"volume": self.controller.volume}
+                return {}
             case "volume_down":
                 await self.controller.volume_down(steps=steps)
-                return {"volume": self.controller.volume}
+                return {}
             case "bass_up":
                 await self.controller.bass_up(steps=steps)
                 return {}
@@ -158,7 +156,6 @@ class Z407WebApp:
         # Push initial state
         await self._send_sse(response, "status", {
             "state": self.controller.state.value,
-            "volume": self.controller.volume,
             "input": self.controller.active_input,
             "connected": self.controller.is_connected,
         })
@@ -187,7 +184,7 @@ class Z407WebApp:
         for client in self._sse_clients:
             try:
                 await self._send_sse(client, event, data)
-            except Exception:
+            except Exception:  # noqa: BLE001 - any write failure means a dead client
                 dead.append(client)
         for d in dead:
             self._sse_clients.remove(d)
@@ -198,12 +195,8 @@ class Z407WebApp:
         asyncio.ensure_future(self._broadcast("status", {
             "state": state.value,
             "connected": state == ConnectionState.CONNECTED,
-            "volume": self.controller.volume,
             "input": self.controller.active_input,
         }))
-
-    def _on_volume_change(self, volume: int) -> None:
-        asyncio.ensure_future(self._broadcast("volume", {"volume": volume}))
 
     def _on_input_change(self, source: str) -> None:
         asyncio.ensure_future(self._broadcast("input", {"input": source}))

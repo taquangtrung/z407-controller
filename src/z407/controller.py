@@ -8,24 +8,16 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import Callable
+from collections.abc import Callable
 
 from z407.connection import ConnectionState, Z407Connection
 from z407.protocol import (
     INPUT_COMMANDS,
     SOURCE_RESPONSE_MAP,
     Command,
-    Response,
-    is_confirmation,
 )
 
 logger = logging.getLogger(__name__)
-
-# Volume estimation constants
-VOLUME_STEP = 5
-VOLUME_MIN = 0
-VOLUME_MAX = 100
-VOLUME_DEFAULT = 50
 
 # Short delay between multi-step commands (seconds)
 COMMAND_DELAY = 0.05
@@ -39,8 +31,6 @@ class Z407Controller:
     on_state_change:
         Optional callback invoked on connection-state changes.  The
         callback receives a :class:`ConnectionState` value.
-    on_volume_change:
-        Optional callback invoked when the estimated volume changes.
     on_input_change:
         Optional callback invoked when the active input source changes.
     """
@@ -48,11 +38,9 @@ class Z407Controller:
     def __init__(
         self,
         on_state_change: Callable[[ConnectionState], None] | None = None,
-        on_volume_change: Callable[[int], None] | None = None,
         on_input_change: Callable[[str], None] | None = None,
     ) -> None:
         self._on_state_change = on_state_change
-        self._on_volume_change = on_volume_change
         self._on_input_change = on_input_change
 
         self._connection = Z407Connection(
@@ -60,8 +48,8 @@ class Z407Controller:
             on_state_change=self._forward_state_change,
         )
 
-        self._volume_estimate: int = VOLUME_DEFAULT
         self._active_input: str | None = None
+        self._maintain_task: asyncio.Future[None] | None = None
 
     # -- Properties ---------------------------------------------------------
 
@@ -72,11 +60,6 @@ class Z407Controller:
     @property
     def state(self) -> ConnectionState:
         return self._connection.state
-
-    @property
-    def volume(self) -> int:
-        """Estimated volume level (0–100)."""
-        return self._volume_estimate
 
     @property
     def active_input(self) -> str | None:
@@ -91,46 +74,42 @@ class Z407Controller:
 
     async def stop(self) -> None:
         """Stop the controller and disconnect."""
+        await self.disconnect()
+        await self._connection.stop()
+
+    def connect(self) -> None:
+        """Start connecting to the speaker in the background (no-op if already running)."""
+        if self._maintain_task is None or self._maintain_task.done():
+            self._maintain_task = asyncio.ensure_future(self._connection.maintain())
+
+    async def disconnect(self) -> None:
+        """Cancel any connection attempt and disconnect from the speaker."""
+        task, self._maintain_task = self._maintain_task, None
+        if task is not None and not task.done():
+            task.cancel()
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
         await self._connection.stop()
 
     # -- Volume -------------------------------------------------------------
 
     async def volume_up(self, steps: int = 1) -> None:
         """Increase volume by *steps* increments."""
-        for _ in range(steps):
-            await self._connection.send_command(Command.VOLUME_UP)
-            self._volume_estimate = min(self._volume_estimate + VOLUME_STEP, VOLUME_MAX)
-            if steps > 1:
-                await asyncio.sleep(COMMAND_DELAY)
-        self._notify_volume()
+        await self._repeat(Command.VOLUME_UP, steps)
 
     async def volume_down(self, steps: int = 1) -> None:
         """Decrease volume by *steps* increments."""
-        for _ in range(steps):
-            await self._connection.send_command(Command.VOLUME_DOWN)
-            self._volume_estimate = max(self._volume_estimate - VOLUME_STEP, VOLUME_MIN)
-            if steps > 1:
-                await asyncio.sleep(COMMAND_DELAY)
-        self._notify_volume()
-
-    def set_volume_estimate(self, value: int) -> None:
-        """Manually set the volume estimate (0–100)."""
-        self._volume_estimate = max(VOLUME_MIN, min(VOLUME_MAX, value))
-        self._notify_volume()
+        await self._repeat(Command.VOLUME_DOWN, steps)
 
     # -- Bass ---------------------------------------------------------------
 
     async def bass_up(self, steps: int = 1) -> None:
-        for _ in range(steps):
-            await self._connection.send_command(Command.BASS_UP)
-            if steps > 1:
-                await asyncio.sleep(COMMAND_DELAY)
+        await self._repeat(Command.BASS_UP, steps)
 
     async def bass_down(self, steps: int = 1) -> None:
-        for _ in range(steps):
-            await self._connection.send_command(Command.BASS_DOWN)
-            if steps > 1:
-                await asyncio.sleep(COMMAND_DELAY)
+        await self._repeat(Command.BASS_DOWN, steps)
 
     # -- Playback -----------------------------------------------------------
 
@@ -199,6 +178,13 @@ class Z407Controller:
 
     # -- Internal -----------------------------------------------------------
 
+    async def _repeat(self, command: Command, steps: int) -> None:
+        """Send *command* *steps* times with a short delay between sends."""
+        for _ in range(steps):
+            await self._connection.send_command(command)
+            if steps > 1:
+                await asyncio.sleep(COMMAND_DELAY)
+
     def _handle_response(self, data: bytearray) -> None:
         """Process speaker responses for source-switch tracking."""
         raw = bytes(data)
@@ -220,10 +206,3 @@ class Z407Controller:
                 self._on_state_change(state)
             except Exception:
                 logger.exception("Error in state-change callback")
-
-    def _notify_volume(self) -> None:
-        if self._on_volume_change:
-            try:
-                self._on_volume_change(self._volume_estimate)
-            except Exception:
-                logger.exception("Error in volume-change callback")
